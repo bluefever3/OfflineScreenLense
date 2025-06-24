@@ -1,4 +1,4 @@
-﻿#include <windows.h>
+#include <windows.h>
 #include <dwmapi.h>
 #include <iostream>
 #include <thread>
@@ -27,11 +27,11 @@
 
 // WinRT namespaces
 using namespace winrt;
-using namespace Windows::Foundation;
-using namespace Windows::Globalization;
-using namespace Windows::Media::Ocr;
-using namespace Windows::Graphics::Imaging;
-using namespace Windows::Storage::Streams;
+using namespace winrt::Windows::Foundation;
+using namespace winrt::Windows::Globalization;
+using namespace winrt::Windows::Media::Ocr;
+using namespace winrt::Windows::Graphics::Imaging;
+using namespace winrt::Windows::Storage::Streams;
 
 // ONNX Runtime and SentencePiece
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ocr-translator-env");
@@ -401,7 +401,7 @@ SoftwareBitmap CaptureScreen(int x, int y, int width, int height)
         uint32_t capacity = 0;
 
         // Query for IBufferByteAccess to get raw pointer to buffer
-        auto byteAccess = reference.as<Windows::Storage::Streams::IBufferByteAccess>();
+        auto byteAccess = reference.as<::Windows::Storage::Streams::IBufferByteAccess>();
         winrt::check_hresult(byteAccess->Buffer(&destPixels)); // Get pointer to buffer
         capacity = reference.Capacity(); // Get buffer capacity
 
