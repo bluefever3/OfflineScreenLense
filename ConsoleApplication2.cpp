@@ -182,8 +182,16 @@ std::wstring TranslateText(const std::wstring& input_text) {
         };
         // Correct way to pass encoder_hidden_state:
         std::vector<Ort::Value> ort_decoder_inputs;
-        ort_decoder_inputs.push_back(decoder_ort_inputs[0].Clone()); // Clone to avoid move issues if any with decoder_input_tensor
-        ort_decoder_inputs.push_back(encoder_hidden_state.Clone()); // Clone to be safe, or ensure Run doesn't take ownership unexpectedly
+        // decoder_ort_inputs[0] is the current decoder input tensor for this step.
+        // It's created new in each loop iteration, so it can be moved.
+        ort_decoder_inputs.push_back(std::move(decoder_ort_inputs[0]));
+
+        // encoder_hidden_state is a reference to encoder_outputs[0].
+        // This line will cause a compilation error because Ort::Value is not copyable
+        // and Clone() was removed as it does not exist.
+        // The correct way to handle this needs further investigation of ONNX Runtime API
+        // for reusing an Ort::Value multiple times as input.
+        ort_decoder_inputs.push_back(encoder_hidden_state);
 
         const char* decoder_input_names[] = {"input_ids", "encoder_hidden_states"};
         const char* decoder_output_names[] = {"logits"};
@@ -356,6 +364,9 @@ RECT SelectScreenRegion()
 }
 
 
+// Interface for IBufferByteAccess
+#include <robuffer.h> // For Windows::Storage::Streams::IBufferByteAccess
+
 SoftwareBitmap CaptureScreen(int x, int y, int width, int height)
 {
     if (width <= 0 || height <= 0) return nullptr;
@@ -363,29 +374,50 @@ SoftwareBitmap CaptureScreen(int x, int y, int width, int height)
     HDC dcScreen = GetDC(nullptr);
     HDC dcMem = CreateCompatibleDC(dcScreen);
     HBITMAP bmp = CreateCompatibleBitmap(dcScreen, width, height);
-    SelectObject(dcMem, bmp);
+    HGDIOBJ oldBmp = SelectObject(dcMem, bmp); // Store old object
+
     BitBlt(dcMem, 0, 0, width, height, dcScreen, x, y, SRCCOPY);
 
-    BITMAPINFOHEADER bi = { sizeof(bi), width, -height, 1, 32, BI_RGB };
+    BITMAPINFOHEADER bi = { sizeof(bi), width, -height, 1, 32, BI_RGB }; // -height for top-down DIB
     std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
     GetDIBits(dcMem, bmp, 0, height, pixels.data(), reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
 
+    SelectObject(dcMem, oldBmp); // Restore old bitmap
     ReleaseDC(nullptr, dcScreen);
     DeleteDC(dcMem);
     DeleteObject(bmp);
 
-    InMemoryRandomAccessStream stream;
-    DataWriter dataWriter(stream);
-    dataWriter.WriteBytes(pixels);
-    dataWriter.StoreAsync().get(); // Ensure data is written to stream
-    dataWriter.FlushAsync().get();
-    stream.Seek(0); // Reset stream position for decoder
-
     try {
-        BitmapDecoder decoder = BitmapDecoder::CreateAsync(BitmapDecoder::PngEncoderId(), stream).get(); // Use PNG or BMP
-        return decoder.GetSoftwareBitmapAsync(BitmapPixelFormat::Bgra8, BitmapAlphaMode::Premultiplied).get();
+        SoftwareBitmap softwareBitmap(BitmapPixelFormat::Bgra8, width, height, BitmapAlphaMode::Ignore);
+
+        BitmapBuffer buffer = softwareBitmap.LockBuffer(BitmapBufferAccessMode::Write);
+        IMemoryBufferReference reference = buffer.CreateReference();
+
+        uint8_t* destPixels = nullptr;
+        uint32_t capacity = 0;
+
+        // Query for IBufferByteAccess to get raw pointer to buffer
+        auto byteAccess = reference.as<Windows::Storage::Streams::IBufferByteAccess>();
+        winrt::check_hresult(byteAccess->Buffer(&destPixels)); // Get pointer to buffer
+        capacity = reference.Capacity(); // Get buffer capacity
+
+        if (capacity >= pixels.size()) {
+            memcpy(destPixels, pixels.data(), pixels.size());
+        } else {
+            std::wcerr << L"CaptureScreen: SoftwareBitmap buffer capacity (" << capacity
+                       << L") is less than pixel data size (" << pixels.size() << L")." << std::endl;
+            reference.Close();
+            buffer.Close();
+            return nullptr;
+        }
+
+        reference.Close();
+        buffer.Close();
+
+        return softwareBitmap;
+
     } catch (winrt::hresult_error const& ex) {
-        std::wcerr << L"CaptureScreen: BitmapDecoder failed: " << ex.message().c_str() << std::endl;
+        std::wcerr << L"CaptureScreen: Failed to create or populate SoftwareBitmap: " << ex.message().c_str() << std::endl;
         return nullptr;
     }
 }
