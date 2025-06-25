@@ -1,4 +1,4 @@
-﻿#include <windows.h>
+#include <windows.h>
 #include <dwmapi.h>
 #include <iostream>
 #include <thread>
@@ -27,11 +27,11 @@
 
 // WinRT namespaces
 using namespace winrt;
-using namespace Windows::Foundation;
-using namespace Windows::Globalization;
-using namespace Windows::Media::Ocr;
-using namespace Windows::Graphics::Imaging;
-using namespace Windows::Storage::Streams;
+using namespace winrt::Windows::Foundation;
+using namespace winrt::Windows::Globalization;
+using namespace winrt::Windows::Media::Ocr;
+using namespace winrt::Windows::Graphics::Imaging;
+using namespace winrt::Windows::Storage::Streams;
 
 // ONNX Runtime and SentencePiece
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ocr-translator-env");
@@ -79,15 +79,15 @@ bool InitTranslationEngine()
     std::string source_spm_path_s(source_spm_path_w.begin(), source_spm_path_w.end());
     std::string target_spm_path_s(target_spm_path_w.begin(), target_spm_path_w.end());
 
-    auto& source_status = sp_source_processor.Load(source_spm_path_s);
+    const auto& source_status = sp_source_processor.Load(source_spm_path_s);
     if (!source_status.ok()) {
         std::string error_message = "Failed to load source SentencePiece model: " + source_status.ToString();
         std::wcerr << L"[ERROR] " << std::wstring(error_message.begin(), error_message.end()) << std::endl;
-        MessageBoxA(nullptr, error_message.c_str() , "Model Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(nullptr, error_message.c_str(), "Model Error", MB_OK | MB_ICONERROR);
         return false;
     }
 
-    auto& target_status = sp_target_processor.Load(target_spm_path_s);
+    const auto& target_status = sp_target_processor.Load(target_spm_path_s);
     if (!target_status.ok()) {
         std::string error_message = "Failed to load target SentencePiece model: " + target_status.ToString();
         std::wcerr << L"[ERROR] " << std::wstring(error_message.begin(), error_message.end()) << std::endl;
@@ -98,7 +98,8 @@ bool InitTranslationEngine()
     try {
         encoder_session = std::make_unique<Ort::Session>(env, encoder_model_path_w.c_str(), session_options);
         decoder_session = std::make_unique<Ort::Session>(env, decoder_model_path_w.c_str(), session_options);
-    } catch (const Ort::Exception& e) {
+    }
+    catch (const Ort::Exception& e) {
         const char* char_what = e.what();
         int what_len = MultiByteToWideChar(CP_UTF8, 0, char_what, -1, nullptr, 0);
         std::wstring what_wstr(what_len, 0);
@@ -131,25 +132,26 @@ std::wstring TranslateText(const std::wstring& input_text) {
     // input_ids_vec.push_back(2); // EOS. Check model specifics. Often SentencePiece handles this.
 
     if (input_ids_vec.empty()) { // If after tokenization it's empty (e.g. only whitespace)
-         return L"";
+        return L"";
     }
 
     int64_t input_length = static_cast<int64_t>(input_ids_vec.size());
-    std::vector<int64_t> input_shape = {1, input_length};
+    std::vector<int64_t> input_shape = { 1, input_length };
 
     Ort::Value encoder_input_tensor = Ort::Value::CreateTensor<int32_t>(
         memory_info, input_ids_vec.data(), input_ids_vec.size(), input_shape.data(), input_shape.size());
 
-    const char* encoder_input_names[] = {"input_ids"};
-    const char* encoder_output_names[] = {"last_hidden_state"};
+    const char* encoder_input_names[] = { "input_ids" };
+    const char* encoder_output_names[] = { "last_hidden_state" };
 
     std::vector<Ort::Value> encoder_outputs;
     try {
-         encoder_outputs = encoder_session->Run(
-            Ort::RunOptions{nullptr},
+        encoder_outputs = encoder_session->Run(
+            Ort::RunOptions{ nullptr },
             encoder_input_names, &encoder_input_tensor, 1,
             encoder_output_names, 1);
-    } catch (const Ort::Exception& e) {
+    }
+    catch (const Ort::Exception& e) {
         std::wcerr << L"[ERROR] Encoder Run failed: " << e.what() << std::endl;
         return L"[Translation Error: Encoder Failed]";
     }
@@ -158,12 +160,12 @@ std::wstring TranslateText(const std::wstring& input_text) {
     Ort::Value& encoder_hidden_state = encoder_outputs[0];
 
     // Decoder loop
-    std::vector<int32_t> decoder_input_ids = {0}; // Start with BOS token (<s> for many models)
+    std::vector<int32_t> decoder_input_ids = { 0 }; // Start with BOS token (<s> for many models)
     std::vector<int32_t> output_tokens;
     const int MAX_DECODE_STEPS = 128; // Max output length
 
     for (int step = 0; step < MAX_DECODE_STEPS; ++step) {
-        std::vector<int64_t> decoder_input_shape = {1, static_cast<int64_t>(decoder_input_ids.size())};
+        std::vector<int64_t> decoder_input_shape = { 1, static_cast<int64_t>(decoder_input_ids.size()) };
         Ort::Value decoder_input_tensor = Ort::Value::CreateTensor<int32_t>(
             memory_info, decoder_input_ids.data(), decoder_input_ids.size(),
             decoder_input_shape.data(), decoder_input_shape.size());
@@ -177,8 +179,8 @@ std::wstring TranslateText(const std::wstring& input_text) {
             // The original code had `encoder_hidden` which was a reference, that's fine.
              Ort::Value::CreateTensor<float>( // This is a placeholder, it should be encoder_hidden_state
                 memory_info, nullptr, 0, {}, 0) // This line needs to be fixed, cannot create empty.
-                                                // The issue is how to pass encoder_hidden_state without moving it.
-                                                // Let's pass encoder_outputs[0] directly.
+            // The issue is how to pass encoder_hidden_state without moving it.
+            // Let's pass encoder_outputs[0] directly.
         };
         // Correct way to pass encoder_hidden_state:
         std::vector<Ort::Value> ort_decoder_inputs;
@@ -193,16 +195,17 @@ std::wstring TranslateText(const std::wstring& input_text) {
         // for reusing an Ort::Value multiple times as input.
         ort_decoder_inputs.push_back(encoder_hidden_state);
 
-        const char* decoder_input_names[] = {"input_ids", "encoder_hidden_states"};
-        const char* decoder_output_names[] = {"logits"};
+        const char* decoder_input_names[] = { "input_ids", "encoder_hidden_states" };
+        const char* decoder_output_names[] = { "logits" };
 
         std::vector<Ort::Value> decoder_outputs;
         try {
             decoder_outputs = decoder_session->Run(
-                Ort::RunOptions{nullptr},
+                Ort::RunOptions{ nullptr },
                 decoder_input_names, ort_decoder_inputs.data(), ort_decoder_inputs.size(),
                 decoder_output_names, 1);
-        } catch (const Ort::Exception& e) {
+        }
+        catch (const Ort::Exception& e) {
             std::wcerr << L"[ERROR] Decoder Run failed: " << e.what() << std::endl;
             return L"[Translation Error: Decoder Failed]";
         }
@@ -235,10 +238,10 @@ std::wstring TranslateText(const std::wstring& input_text) {
 
     int wlen_needed = MultiByteToWideChar(CP_UTF8, 0, decoded_text.c_str(), -1, nullptr, 0);
     if (wlen_needed == 0 && !decoded_text.empty()) { // Check if decoded_text is empty to avoid error on empty string
-         std::wcerr << L"[ERROR] TranslateText: MultiByteToWideChar failed (2)." << std::endl;
+        std::wcerr << L"[ERROR] TranslateText: MultiByteToWideChar failed (2)." << std::endl;
         return L"[Translation Error: Output Conversion Failed]";
     }
-     if (wlen_needed == 0 && decoded_text.empty()) {
+    if (wlen_needed == 0 && decoded_text.empty()) {
         return L""; // Successfully decoded to an empty string
     }
 
@@ -311,17 +314,18 @@ RECT SelectScreenRegion()
                 end_pt = start_pt; // Initialize end_pt
                 selecting_region = true;
                 SetCapture(hSelectionOverlay); // Capture mouse to this window
-            } else {
-                 GetCursorPos(&end_pt);
-                 ScreenToClient(hSelectionOverlay, &end_pt);
-                 // Redraw the selection rectangle
-                 InvalidateRect(hSelectionOverlay, NULL, TRUE); // Invalidate to trigger WM_PAINT
-                 UpdateWindow(hSelectionOverlay); // Force paint now
+            }
+            else {
+                GetCursorPos(&end_pt);
+                ScreenToClient(hSelectionOverlay, &end_pt);
+                // Redraw the selection rectangle
+                InvalidateRect(hSelectionOverlay, NULL, TRUE); // Invalidate to trigger WM_PAINT
+                UpdateWindow(hSelectionOverlay); // Force paint now
 
-                 // Or draw directly if WM_PAINT is too slow for live feedback
-                 // RECT currentRect = {min(start_pt.x, end_pt.x), min(start_pt.y, end_pt.y), max(start_pt.x, end_pt.x), max(start_pt.y, end_pt.y)};
-                 // InvalidateRect(hSelectionOverlay, NULL, TRUE); // Clear previous
-                 // Rectangle(hdc, currentRect.left, currentRect.top, currentRect.right, currentRect.bottom);
+                // Or draw directly if WM_PAINT is too slow for live feedback
+                // RECT currentRect = {min(start_pt.x, end_pt.x), min(start_pt.y, end_pt.y), max(start_pt.x, end_pt.x), max(start_pt.y, end_pt.y)};
+                // InvalidateRect(hSelectionOverlay, NULL, TRUE); // Clear previous
+                // Rectangle(hdc, currentRect.left, currentRect.top, currentRect.right, currentRect.bottom);
             }
         }
         else // LBUTTON up or not pressed
@@ -333,13 +337,13 @@ RECT SelectScreenRegion()
                 break;
             }
         }
-         if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) // Allow canceling selection
+        if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) // Allow canceling selection
         {
             ReleaseCapture();
             DestroyWindow(hSelectionOverlay);
             DeleteObject(hPen);
             ReleaseDC(hSelectionOverlay, hdc);
-            return RECT{0,0,0,0}; // Indicate cancellation or invalid region
+            return RECT{ 0,0,0,0 }; // Indicate cancellation or invalid region
         }
         Sleep(10); // Don't peg CPU
     }
@@ -397,15 +401,16 @@ SoftwareBitmap CaptureScreen(int x, int y, int width, int height)
         uint32_t capacity = 0;
 
         // Query for IBufferByteAccess to get raw pointer to buffer
-        auto byteAccess = reference.as<Windows::Storage::Streams::IBufferByteAccess>();
+        auto byteAccess = reference.as<::Windows::Storage::Streams::IBufferByteAccess>();
         winrt::check_hresult(byteAccess->Buffer(&destPixels)); // Get pointer to buffer
         capacity = reference.Capacity(); // Get buffer capacity
 
         if (capacity >= pixels.size()) {
             memcpy(destPixels, pixels.data(), pixels.size());
-        } else {
+        }
+        else {
             std::wcerr << L"CaptureScreen: SoftwareBitmap buffer capacity (" << capacity
-                       << L") is less than pixel data size (" << pixels.size() << L")." << std::endl;
+                << L") is less than pixel data size (" << pixels.size() << L")." << std::endl;
             reference.Close();
             buffer.Close();
             return nullptr;
@@ -416,7 +421,8 @@ SoftwareBitmap CaptureScreen(int x, int y, int width, int height)
 
         return softwareBitmap;
 
-    } catch (winrt::hresult_error const& ex) {
+    }
+    catch (winrt::hresult_error const& ex) {
         std::wcerr << L"CaptureScreen: Failed to create or populate SoftwareBitmap: " << ex.message().c_str() << std::endl;
         return nullptr;
     }
@@ -436,8 +442,8 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         GetClientRect(hwnd, &client_rect);
 
         HFONT hFont = CreateFontW(24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                                DEFAULT_PITCH | FF_SWISS, L"Arial");
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+            DEFAULT_PITCH | FF_SWISS, L"Arial");
         HFONT oldFont = (HFONT)SelectObject(hdc, hFont);
 
         DrawTextW(hdc, g_current_overlay_text.c_str(), -1, &client_rect, DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_NOCLIP);
@@ -454,7 +460,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 void RegisterOverlayWindowClass(HINSTANCE hInstance) {
-    WNDCLASSW wc = {0};
+    WNDCLASSW wc = { 0 };
     wc.lpfnWndProc = OverlayWndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = OVERLAY_WINDOW_CLASS;
@@ -489,7 +495,7 @@ void CreateOrUpdateOverlayWindow(const std::wstring& text, const RECT& target_oc
             }
             if (overlay_y + overlay_height > monitorInfo.rcWork.bottom) {
                 overlay_y = monitorInfo.rcWork.bottom - overlay_height;
-                 if (overlay_y < monitorInfo.rcWork.top) overlay_y = target_ocr_region.top - overlay_height - 5; // try above
+                if (overlay_y < monitorInfo.rcWork.top) overlay_y = target_ocr_region.top - overlay_height - 5; // try above
             }
             if (overlay_x < monitorInfo.rcWork.left) overlay_x = monitorInfo.rcWork.left;
             if (overlay_y < monitorInfo.rcWork.top) overlay_y = monitorInfo.rcWork.top;
@@ -515,7 +521,8 @@ void CreateOrUpdateOverlayWindow(const std::wstring& text, const RECT& target_oc
         SetLayeredWindowAttributes(g_overlay_hwnd, 0, 220, LWA_ALPHA); // 220 for semi-transparent
         ShowWindow(g_overlay_hwnd, SW_SHOWNA); // SW_SHOWNA to show without activating
         UpdateWindow(g_overlay_hwnd);
-    } else {
+    }
+    else {
         // Update position if needed (e.g. if target_ocr_region moves)
         // For now, we just update text.
         InvalidateRect(g_overlay_hwnd, nullptr, TRUE); // Trigger repaint
@@ -525,9 +532,9 @@ void CreateOrUpdateOverlayWindow(const std::wstring& text, const RECT& target_oc
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+    _In_opt_ HINSTANCE hPrevInstance,
+    _In_ LPWSTR    lpCmdLine,
+    _In_ int       nCmdShow)
 {
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
@@ -579,8 +586,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     OcrEngine engine = nullptr;
     try {
         engine = OcrEngine::TryCreateFromLanguage(Language(L"en"));
-    } catch (winrt::hresult_error const& ex) {
-         std::wcerr << L"[FATAL] Failed to create OCR Engine: " << ex.message().c_str() << std::endl;
+    }
+    catch (winrt::hresult_error const& ex) {
+        std::wcerr << L"[FATAL] Failed to create OCR Engine: " << ex.message().c_str() << std::endl;
     }
 
     if (!engine)
@@ -626,8 +634,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         if (software_bitmap) {
             OcrResult ocr_result = nullptr;
             try {
-                 ocr_result = engine.RecognizeAsync(software_bitmap).get();
-            } catch (winrt::hresult_error const& ex) {
+                ocr_result = engine.RecognizeAsync(software_bitmap).get();
+            }
+            catch (winrt::hresult_error const& ex) {
                 std::wcerr << L"OCR RecognizeAsync error: " << ex.message().c_str() << std::endl;
                 // Maybe show a temporary error on overlay or log
             }
@@ -638,14 +647,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                     last_ocr_text = current_text;
                     std::wstring translated_text = TranslateText(current_text);
                     if (!translated_text.empty()) {
-                         CreateOrUpdateOverlayWindow(translated_text, capture_region);
-                    } else if (translated_text.empty() && !current_text.empty()){
-                         // If translation is empty but source wasn't, maybe show source or "..."
-                         CreateOrUpdateOverlayWindow(L"...", capture_region);
+                        CreateOrUpdateOverlayWindow(translated_text, capture_region);
+                    }
+                    else if (translated_text.empty() && !current_text.empty()) {
+                        // If translation is empty but source wasn't, maybe show source or "..."
+                        CreateOrUpdateOverlayWindow(L"...", capture_region);
                     }
                 }
             }
-        } else {
+        }
+        else {
             // Handle capture failure, maybe log or show error on overlay
             // CreateOrUpdateOverlayWindow(L"[Capture Error]", capture_region);
         }
