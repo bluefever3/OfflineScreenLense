@@ -1,4 +1,3 @@
-#include <windows.h>
 #include <dwmapi.h>
 #include <iostream>
 #include <thread>
@@ -34,6 +33,34 @@ using namespace winrt::Windows::Graphics::Imaging;
 using namespace winrt::Windows::Storage::Streams;
 
 // ONNX Runtime and SentencePiece
+namespace Ort {
+    // Helper to get byte size of an ONNX tensor element type
+    inline size_t GetTensorElementSize(ONNXTensorElementDataType type) {
+        switch (type) {
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:   return sizeof(float);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:   return sizeof(uint8_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:    return sizeof(int8_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:  return sizeof(uint16_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:   return sizeof(int16_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:   return sizeof(int32_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:   return sizeof(int64_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:  return sizeof(std::string); // This is tricky, usually for string tensors, it's handled differently.
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:    return sizeof(bool); // Or uint8_t
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: return sizeof(uint16_t); // Half float
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:  return sizeof(double);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:  return sizeof(uint32_t);
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:  return sizeof(uint64_t);
+            // BFLOAT16 and other complex types might need specific handling or might not be common here.
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16: return sizeof(uint16_t); // Size is 2 bytes
+        default:
+            // Throw or return 0 to indicate an unsupported/unknown type
+            // For safety, returning 0 and potentially logging an error might be better than throwing in some contexts.
+            // However, if this happens, it's a fundamental issue with model compatibility.
+            throw std::runtime_error("Unsupported ONNX tensor element data type in GetTensorElementSize: " + std::to_string(type));
+        }
+    }
+} // namespace Ort
+
 Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ocr-translator-env");
 Ort::SessionOptions session_options;
 Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -75,21 +102,30 @@ bool InitTranslationEngine()
     std::wstring encoder_model_path_w = models_dir + L"\\encoder_model.onnx";
     std::wstring decoder_model_path_w = models_dir + L"\\decoder_model.onnx";
 
-    // Convert wstring paths to string for SentencePiece
-    std::string source_spm_path_s(source_spm_path_w.begin(), source_spm_path_w.end());
-    std::string target_spm_path_s(target_spm_path_w.begin(), target_spm_path_w.end());
+    // Helper lambda for wstring to UTF-8 string conversion
+    auto wstring_to_utf8_string = [](const std::wstring& wstr) -> std::string {
+        if (wstr.empty()) return std::string();
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.length(), NULL, 0, NULL, NULL);
+        std::string strTo(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.length(), &strTo[0], size_needed, NULL, NULL);
+        return strTo;
+        };
 
-    const auto& source_status = sp_source_processor.Load(source_spm_path_s);
+    // Convert wstring paths to UTF-8 string for SentencePiece
+    std::string source_spm_path_s = wstring_to_utf8_string(source_spm_path_w);
+    std::string target_spm_path_s = wstring_to_utf8_string(target_spm_path_w);
+
+    const auto& source_status = sp_source_processor.Load(source_spm_path_s.c_str());
     if (!source_status.ok()) {
-        std::string error_message = "Failed to load source SentencePiece model: " + source_status.ToString();
+        std::string error_message = "Failed to load source SentencePiece model (" + source_spm_path_s + "): " + source_status.ToString();
         std::wcerr << L"[ERROR] " << std::wstring(error_message.begin(), error_message.end()) << std::endl;
         MessageBoxA(nullptr, error_message.c_str(), "Model Error", MB_OK | MB_ICONERROR);
         return false;
     }
 
-    const auto& target_status = sp_target_processor.Load(target_spm_path_s);
+    const auto& target_status = sp_target_processor.Load(target_spm_path_s.c_str());
     if (!target_status.ok()) {
-        std::string error_message = "Failed to load target SentencePiece model: " + target_status.ToString();
+        std::string error_message = "Failed to load target SentencePiece model (" + target_spm_path_s + "): " + target_status.ToString();
         std::wcerr << L"[ERROR] " << std::wstring(error_message.begin(), error_message.end()) << std::endl;
         MessageBoxA(nullptr, error_message.c_str(), "Model Error", MB_OK | MB_ICONERROR);
         return false;
@@ -170,30 +206,35 @@ std::wstring TranslateText(const std::wstring& input_text) {
             memory_info, decoder_input_ids.data(), decoder_input_ids.size(),
             decoder_input_shape.data(), decoder_input_shape.size());
 
-        std::array<Ort::Value, 2> decoder_ort_inputs = {
-            std::move(decoder_input_tensor),
-            // For decoder cross-attention, encoder_hidden_state needs to be persistent.
-            // The Ort::Value move semantics mean we need to be careful.
-            // It's safer to re-create or clone if necessary, but here it's just being "borrowed".
-            // Let's ensure encoder_hidden_state is not moved from.
-            // The original code had `encoder_hidden` which was a reference, that's fine.
-             Ort::Value::CreateTensor<float>( // This is a placeholder, it should be encoder_hidden_state
-                memory_info, nullptr, 0, {}, 0) // This line needs to be fixed, cannot create empty.
-            // The issue is how to pass encoder_hidden_state without moving it.
-            // Let's pass encoder_outputs[0] directly.
-        };
-        // Correct way to pass encoder_hidden_state:
-        std::vector<Ort::Value> ort_decoder_inputs;
-        // decoder_ort_inputs[0] is the current decoder input tensor for this step.
-        // It's created new in each loop iteration, so it can be moved.
-        ort_decoder_inputs.push_back(std::move(decoder_ort_inputs[0]));
+        // Prepare inputs for the decoder session's Run method.
+        // Input 1: decoder_input_tensor (current sequence of generated tokens for this step)
+        // Input 2: encoder_hidden_state (output from the encoder, constant across decoder steps)
 
-        // encoder_hidden_state is a reference to encoder_outputs[0].
-        // This line will cause a compilation error because Ort::Value is not copyable
-        // and Clone() was removed as it does not exist.
-        // The correct way to handle this needs further investigation of ONNX Runtime API
-        // for reusing an Ort::Value multiple times as input.
-        ort_decoder_inputs.push_back(encoder_hidden_state);
+        // Get data from encoder_hidden_state (which is encoder_outputs[0]) to wrap it.
+        // This wrapper Ort::Value will not own the data.
+        auto& enc_out_val = encoder_outputs[0]; // This is the Ort::Value from the encoder
+        auto enc_tensor_info = enc_out_val.GetTensorTypeAndShapeInfo();
+        auto enc_tensor_element_type = enc_tensor_info.GetElementType();
+        auto enc_tensor_shape = enc_tensor_info.GetShape();
+        void* enc_tensor_data = enc_out_val.GetTensorMutableData<void>(); // Get raw data pointer
+
+        // Create a new Ort::Value that wraps the encoder's output data.
+        // This wrapper does not own the data; encoder_outputs[0] does.
+        // The memory_info should be the same as the one used for encoder_outputs[0].
+        // Assuming encoder_outputs[0] was created with memory_info (CPU).
+        Ort::Value encoder_hidden_state_wrapper = Ort::Value::CreateTensor(
+            memory_info, // Assuming data is on CPU, consistent with how encoder_outputs[0] would be.
+            enc_tensor_data,
+            enc_out_val.GetTensorTypeAndShapeInfo().GetElementCount() * Ort::GetTensorElementSize(enc_tensor_info.GetElementType()), // Total data length in bytes
+            enc_tensor_shape.data(),
+            enc_tensor_shape.size(),
+            enc_tensor_element_type
+        );
+
+        std::vector<Ort::Value> ort_decoder_inputs;
+        ort_decoder_inputs.reserve(2);
+        ort_decoder_inputs.emplace_back(std::move(decoder_input_tensor)); // Move the per-step decoder input
+        ort_decoder_inputs.emplace_back(std::move(encoder_hidden_state_wrapper)); // Move the wrapper
 
         const char* decoder_input_names[] = { "input_ids", "encoder_hidden_states" };
         const char* decoder_output_names[] = { "logits" };
@@ -202,7 +243,7 @@ std::wstring TranslateText(const std::wstring& input_text) {
         try {
             decoder_outputs = decoder_session->Run(
                 Ort::RunOptions{ nullptr },
-                decoder_input_names, ort_decoder_inputs.data(), ort_decoder_inputs.size(),
+                decoder_input_names, ort_decoder_inputs.data(), ort_decoder_inputs.size(), // Pass data() and size()
                 decoder_output_names, 1);
         }
         catch (const Ort::Exception& e) {
