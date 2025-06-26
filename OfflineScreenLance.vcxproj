@@ -72,7 +72,7 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(WindowsSdkDir)\Include\$(WindowsTargetPlatformVersion)\cppwinrt;C:\Users\bluefever3\source\repos\OfflineScreenLance\onnxruntime-win-x64-1.22.0\include;$(SolutionDir)\libs\sentencepiece\include</IncludePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(WindowsSdkDir)\Include\$(WindowsTargetPlatformVersion)\cppwinrt;C:\Users\bluefever3\source\repos\OfflineScreenLance\packages\Microsoft.ML.OnnxRuntime.1.18.0\build\native\include;$(SolutionDir)\libs\sentencepiece\include</IncludePath>
     <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\Users\bluefever3\source\repos\OfflineScreenLance\onnxruntime-win-x64-1.22.0\lib;$(SolutionDir)\libs\sentencepiece\lib</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
