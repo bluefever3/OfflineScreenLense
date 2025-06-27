@@ -72,8 +72,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(WindowsSdkDir)\Include\$(WindowsTargetPlatformVersion)\cppwinrt;C:\Users\bluefever3\source\repos\OfflineScreenLance\packages\Microsoft.ML.OnnxRuntime.1.18.0\build\native\include;$(SolutionDir)\libs\sentencepiece\include</IncludePath>
-    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\Users\bluefever3\source\repos\OfflineScreenLance\onnxruntime-win-x64-1.22.0\lib;$(SolutionDir)\libs\sentencepiece\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(WindowsSdkDir)\Include\$(WindowsTargetPlatformVersion)\cppwinrt;C:\Users\bluefever3\source\repos\OfflineScreenLance\packages\Microsoft.ML.OnnxRuntime.1.18.0\build\native\include</IncludePath>
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);C:\Users\bluefever3\source\repos\OfflineScreenLance\onnxruntime-win-x64-1.22.0\lib</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -110,13 +110,13 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalIncludeDirectories>C:\Users\bluefever3\source\repos\OfflineScreenLance\packages\Microsoft.ML.OnnxRuntime.1.18.0\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <EnableModules>true</EnableModules>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;WindowsApp.lib;onnxruntime.lib
-;sentencepiece.lib
-;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;WindowsApp.lib;onnxruntime.lib;sentencepiece.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\Users\bluefever3\source\repos\OfflineScreenLance\packages\Microsoft.ML.OnnxRuntime.1.18.0\runtimes\win-x64\native;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
